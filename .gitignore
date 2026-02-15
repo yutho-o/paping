@@ -4,3 +4,4 @@
 *.exe
 target/
 Cargo.lock
+.vscode/
