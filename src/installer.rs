@@ -21,12 +21,24 @@ pub fn ensure_installed_and_relaunch_if_needed() -> Result<InstallOutcome, Strin
         return Ok(InstallOutcome::Noop);
     }
 
+    // If something is already installed, avoid overwriting it with an older binary.
+    if install_exe.exists() {
+        if let (Some(installed), Some(current)) = (
+            read_exe_version(&install_exe),
+            parse_version(env!("CARGO_PKG_VERSION")),
+        ) {
+            if installed >= current {
+                return relaunch(&install_exe);
+            }
+        }
+    }
+
     if let Some(parent) = install_exe.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create install dir '{}': {e}", parent.display()))?;
     }
 
-    // Copy current binary to install location (overwrite).
+    // Copy current binary to install location (overwrite / upgrade).
     std::fs::copy(&current_exe, &install_exe).map_err(|e| {
         format!(
             "Failed to copy '{}' to '{}': {e}",
@@ -56,9 +68,13 @@ pub fn ensure_installed_and_relaunch_if_needed() -> Result<InstallOutcome, Strin
         add_to_user_path(dir);
     }
 
+    relaunch(&install_exe)
+}
+
+fn relaunch(install_exe: &Path) -> Result<InstallOutcome, String> {
     // Relaunch from installed location with the same args.
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
-    let mut cmd = std::process::Command::new(&install_exe);
+    let mut cmd = std::process::Command::new(install_exe);
     cmd.args(args);
     // Disable auto-install in the child process to avoid any accidental loops.
     cmd.env("PAPING_NO_AUTO_INSTALL", "1");
@@ -71,6 +87,29 @@ pub fn ensure_installed_and_relaunch_if_needed() -> Result<InstallOutcome, Strin
     })?;
 
     Ok(InstallOutcome::Relaunched)
+}
+
+fn read_exe_version(exe: &Path) -> Option<(u64, u64, u64)> {
+    let out = std::process::Command::new(exe)
+        .arg("--version")
+        .env("PAPING_NO_AUTO_INSTALL", "1")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    // Expected format: "paping X.Y.Z"
+    let ver = s.split_whitespace().last()?;
+    parse_version(ver)
+}
+
+fn parse_version(s: &str) -> Option<(u64, u64, u64)> {
+    let mut it = s.trim().split('.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next()?.parse().ok()?;
+    let patch = it.next()?.parse().ok()?;
+    Some((major, minor, patch))
 }
 
 fn desired_install_exe_path() -> Result<PathBuf, String> {

@@ -2,7 +2,7 @@ use colored::Colorize;
 use serde::Deserialize;
 use std::io::Read;
 
-const REPO_OWNER: &str = "Yutho-tv";
+const REPO_OWNER: &str = "yutho-o";
 const REPO_NAME: &str = "paping";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -127,25 +127,68 @@ fn download_and_replace(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     response.into_reader().read_to_end(&mut bytes)?;
 
     let current_exe = std::env::current_exe()?;
-    let backup = current_exe.with_extension("old");
 
-    // On Windows we can't overwrite a running .exe, so we rename
-    // the current one to .old, then write the new binary
-    if backup.exists() {
-        std::fs::remove_file(&backup)?;
-    }
-    std::fs::rename(&current_exe, &backup)?;
-    std::fs::write(&current_exe, &bytes)?;
-
-    // On Linux/macOS, make the new binary executable
-    #[cfg(unix)]
+    #[cfg(windows)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&current_exe, std::fs::Permissions::from_mode(0o755))?;
+        // Windows cannot overwrite/rename a running .exe. Instead we:
+        // 1) download to a staged file next to the current exe
+        // 2) spawn a PowerShell process that waits for paping to exit
+        // 3) replace the exe once it's unlocked
+        let staged = current_exe.with_extension("exe.new");
+        std::fs::write(&staged, &bytes)?;
+
+        let pid = std::process::id();
+        let staged_ps = ps_escape_single_quoted(&staged.to_string_lossy());
+        let current_ps = ps_escape_single_quoted(&current_exe.to_string_lossy());
+
+        let script = format!(
+            "$ErrorActionPreference='SilentlyContinue'; Start-Sleep -Milliseconds 300; \
+try {{ Wait-Process -Id {pid} -ErrorAction SilentlyContinue }} catch {{ }}; \
+Move-Item -Force -LiteralPath '{staged_ps}' -Destination '{current_ps}';"
+        );
+
+        let _ = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &script,
+            ])
+            .spawn();
+
+        println!(
+            "Update downloaded. It will be applied when this process exits."
+        );
     }
 
-    // Remove the old backup file (no big deal if it fails)
-    let _ = std::fs::remove_file(&backup);
+    #[cfg(not(windows))]
+    {
+        // On Unix, we can safely replace the binary even while it's running.
+        let backup = current_exe.with_extension("old");
+
+        if backup.exists() {
+            std::fs::remove_file(&backup)?;
+        }
+        std::fs::rename(&current_exe, &backup)?;
+        std::fs::write(&current_exe, &bytes)?;
+
+        // Make the new binary executable
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&current_exe, std::fs::Permissions::from_mode(0o755))?;
+        }
+
+        // Remove the old backup file (no big deal if it fails)
+        let _ = std::fs::remove_file(&backup);
+    }
 
     Ok(())
+}
+
+#[cfg(windows)]
+fn ps_escape_single_quoted(s: &str) -> String {
+    // In PowerShell single-quoted strings, escape a single quote by doubling it.
+    s.replace('\'', "''")
 }
