@@ -1,0 +1,21 @@
+[package]
+name = "paping"
+version = "1.0.0"
+edition = "2021"
+description = "TCP port ping utility"
+authors = ["Yutho <https://github.com/Yutho-tv>"]
+repository = "https://github.com/Yutho-tv/paping"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+colored = "2"
+ctrlc = "3"
+socket2 = "0.5"
+ureq = { version = "2", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+
+[profile.release]
+strip = true
+lto = true
+opt-level = "z"
