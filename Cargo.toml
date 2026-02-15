@@ -1,6 +1,6 @@
 [package]
 name = "paping"
-version = "1.6.0"
+version = "1.6.1"
 edition = "2021"
 description = "TCP port ping utility"
 authors = ["Yutho <https://github.com/Yutho-tv>"]
@@ -14,6 +14,9 @@ ctrlc = "3"
 socket2 = "0.5"
 ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
 
 [profile.release]
 strip = true

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 mod pinger;
+mod installer;
 mod socks5;
 mod updater;
 
@@ -49,6 +50,16 @@ enum Commands {
 }
 
 fn main() {
+    // Auto-install to a user location (not System32) and relaunch from there.
+    match installer::ensure_installed_and_relaunch_if_needed() {
+        Ok(installer::InstallOutcome::Relaunched) => return,
+        Ok(installer::InstallOutcome::Noop) => {}
+        Err(e) => {
+            // Don't block execution if install fails; run in "portable" mode.
+            eprintln!("Warning: auto-install failed: {e}");
+        }
+    }
+
     let cli = Cli::parse();
 
     match cli.command {
