@@ -1,6 +1,6 @@
 [package]
 name = "paping"
-version = "1.0.0"
+version = "1.6.0"
 edition = "2021"
 description = "TCP port ping utility"
 authors = ["Yutho <https://github.com/Yutho-tv>"]
